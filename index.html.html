@@ -1,4 +1,23 @@
-<!doctype html>
+#!/usr/bin/env python3
+"""
+generate_site.py
+
+Creates a single-file webpage "index.html" for A.S. Construction and (optionally)
+starts a simple HTTP server to preview it locally.
+
+Usage:
+    python generate_site.py         # creates index.html and starts server at http://localhost:8000
+    python generate_site.py --no-server   # just writes index.html and exits
+"""
+
+import argparse
+import http.server
+import socketserver
+import threading
+import webbrowser
+from pathlib import Path
+
+HTML = r"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -138,8 +157,8 @@
             <li>• Free home planning & 3D layout consultations</li>
             <li>• Warranty on major structural work</li>
           </ul>
-          <div style="margin-top:12px;"><strong>Phone:</strong> +917750881749/7327842711</div>
-          <div style="margin-top:6px;"><strong>Email:</strong> santarakarunakr@gmail.com</div>
+          <div style="margin-top:12px;"><strong>Phone:</strong> +91 98765 43210</div>
+          <div style="margin-top:6px;"><strong>Email:</strong> info@asconstruction.example</div>
         </div>
       </aside>
     </section>
@@ -225,3 +244,51 @@
   </script>
 </body>
 </html>
+"""
+
+def write_file(dest: Path):
+    dest.write_text(HTML, encoding="utf-8")
+    print(f"Wrote {dest.resolve()}")
+
+def run_server(directory: Path, port: int = 8000):
+    # Serve the provided directory using Python's built-in server
+    handler = http.server.SimpleHTTPRequestHandler
+    # change working directory for the server to the target dir
+    current_dir = Path.cwd()
+    try:
+        import os
+        os.chdir(directory)
+        with socketserver.TCPServer(("", port), handler) as httpd:
+            url = f"http://localhost:{port}/index.html"
+            print(f"Serving at {url} (press Ctrl+C to stop)")
+            # open browser in a separate thread so server runs
+            threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+            httpd.serve_forever()
+    finally:
+        os.chdir(current_dir)
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate A.S. Construction webpage and optionally run a local server.")
+    parser.add_argument("--out-dir", "-o", default="site", help="Output directory to write files into (default: ./site)")
+    parser.add_argument("--no-server", action="store_true", help="Write files but do not start local server")
+    parser.add_argument("--port", "-p", type=int, default=8000, help="Port for the preview server (default 8000)")
+    args = parser.parse_args()
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index_path = out_dir / "index.html"
+
+    write_file(index_path)
+
+    if args.no_server:
+        print("Done. To preview, open the generated file in a browser or run without --no-server to start a local server.")
+        print(f"File location: {index_path.resolve()}")
+        return
+
+    try:
+        run_server(out_dir, port=args.port)
+    except KeyboardInterrupt:
+        print("\nServer stopped by user. Goodbye.")
+
+if _name_ == "_main_":
+    main()
