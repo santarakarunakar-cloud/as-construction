@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""
+generate_site.py
+
+Creates a single-file webpage "index.html" for A.S. Construction and (optionally)
+starts a simple HTTP server to preview it locally.
+
+Usage:
+    python generate_site.py         # creates index.html and starts server at http://localhost:8000
+    python generate_site.py --no-server   # just writes index.html and exits
+"""
+
+import argparse
+import http.server
+import socketserver
+import threading
+import webbrowser
+from pathlib import Path
+
+HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>A.S. Construction — Home</title>
+  <meta name="description" content="A.S. Construction — complete home building, foundation, roofing, interior design and free home planning with engineers." />
+  <style>
+    /* Reset-ish */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height: 100%; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; color: #1f2937; background: #f8fafc; }
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+
+    /* Container */
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px; }
+
+    /* Top nav */
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 0; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .logo { width:64px; height:64px; display:inline-block; }
+    .brand h1 { font-size:20px; letter-spacing:0.6px; margin-bottom:2px; }
+    .brand p { font-size:12px; color:#475569; margin:0; }
+
+    nav { display:flex; gap:14px; align-items:center; }
+    nav a { padding:8px 12px; border-radius:8px; font-size:14px; color:#0f172a; }
+    nav a.cta { background:#0ea5a4; color:white; box-shadow:0 6px 18px rgba(14,165,164,0.12); }
+
+    /* Hero */
+    .hero {
+      margin-top:18px;
+      background: linear-gradient(180deg, rgba(14,165,164,0.06), rgba(99,102,241,0.03));
+      border-radius:14px;
+      padding:28px;
+      display:grid;
+      grid-template-columns: 1fr 420px;
+      gap:24px;
+      align-items:center;
+    }
+    .hero .left h2 { font-size:28px; line-height:1.05; color:#0f172a; margin-bottom:12px; }
+    .hero p { color:#475569; margin-bottom:18px; }
+    .hero .cta-row { display:flex; gap:12px; flex-wrap:wrap; }
+    .btn { display:inline-block; padding:10px 16px; border-radius:10px; background:#0ea5a4; color:white; font-weight:600; }
+    .btn.alt { background:transparent; border:1px solid #cbd5e1; color:#0f172a; }
+
+    /* Services */
+    .services { margin-top:26px; display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+    .card {
+      background:white;
+      border-radius:12px;
+      padding:16px;
+      box-shadow:0 6px 18px rgba(2,6,23,0.06);
+    }
+    .card h3 { margin-bottom:8px; font-size:16px; }
+    .card p { color:#475569; font-size:14px; }
+
+    /* Portfolio / features */
+    .features { margin-top:22px; display:flex; gap:18px; flex-wrap:wrap; }
+    .feature-img { flex:1 1 320px; min-height:190px; border-radius:10px; background:linear-gradient(90deg,#eef2ff,#ecfeff); display:flex; align-items:center; justify-content:center; font-weight:700; color:#334155; }
+    .feature-list { flex:1 1 280px; display:flex; flex-direction:column; gap:10px; }
+
+    .feature-item { background:white; border-radius:10px; padding:12px; display:flex; gap:12px; align-items:center; box-shadow:0 6px 18px rgba(2,6,23,0.04); }
+    .fi-dot { width:12px;height:12px;border-radius:50%; background:#0ea5a4; flex:0 0 12px; }
+
+    /* Contact */
+    .contact { margin-top:26px; display:grid; grid-template-columns: 1fr 360px; gap:18px; align-items:start; }
+    form { background:white; padding:16px; border-radius:12px; box-shadow:0 6px 18px rgba(2,6,23,0.04); display:flex; flex-direction:column; gap:10px; }
+    label { font-size:13px; color:#334155; }
+    input, textarea { padding:10px 12px; border-radius:8px; border:1px solid #e6edf3; font-size:14px; }
+    textarea { min-height:120px; resize:vertical; }
+    .contact-info { background:linear-gradient(180deg,#0ea5a4,#34d399); color:white; padding:18px; border-radius:12px; box-shadow:0 8px 28px rgba(14,165,164,0.12); }
+    .contact-info h4 { margin-bottom:8px; }
+    .muted { color:rgba(255,255,255,0.9); font-size:14px; }
+
+    /* Footer */
+    footer { margin-top:28px; padding:18px 0; text-align:center; color:#64748b; font-size:14px; }
+
+    /* Responsive */
+    @media (max-width:980px) {
+      .hero { grid-template-columns: 1fr; }
+      .contact { grid-template-columns: 1fr; }
+      header { flex-direction:column; align-items:flex-start; gap:10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <header>
+      <div class="brand">
+        <!-- Inline SVG logo: "A.S." inside a house silhouette -->
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img">
+            <title>A.S. Construction logo</title>
+            <defs>
+              <linearGradient id="g1" x1="0" x2="1">
+                <stop offset="0" stop-color="#06b6d4"/>
+                <stop offset="1" stop-color="#6366f1"/>
+              </linearGradient>
+            </defs>
+            <rect width="100" height="100" rx="14" fill="#ffffff"/>
+            <path d="M10 45 L50 15 L90 45 V82 A6 6 0 0 1 84 88 H16 A6 6 0 0 1 10 82 Z" fill="url(#g1)" opacity="0.95"/>
+            <rect x="20" y="48" width="60" height="34" rx="4" fill="#fff" opacity="0.12"/>
+            <text x="50" y="72" text-anchor="middle" font-family="Inter, Arial" font-weight="700" font-size="28" fill="#fff">A.S.</text>
+          </svg>
+        </div>
+        <div>
+          <h1>A.S. Construction</h1>
+          <p>From foundation to finishing — free home planning with our engineers</p>
+        </div>
+      </div>
+
+      <nav>
+        <a href="#services">Services</a>
+        <a href="#portfolio">Portfolio</a>
+        <a href="#contact">Contact</a>
+        <a href="#contact" class="cta">Get a Free Quote</a>
+      </nav>
+    </header>
+
+    <!-- HERO / BANNER -->
+    <section class="hero" role="region" aria-label="Hero">
+      <div class="left">
+        <h2>Quality homes built with strength & care.</h2>
+        <p>Complete home construction — foundation, roofing, electrical & plumbing, interior design and turnkey delivery. Free structural planning by our engineers for every project.</p>
+        <div class="cta-row">
+          <a class="btn" href="#contact">Request Free Quote</a>
+          <a class="btn alt" href="#portfolio">View Portfolio</a>
+        </div>
+      </div>
+
+      <aside class="right">
+        <div style="background:white; padding:16px; border-radius:10px; box-shadow:0 10px 30px rgba(2,6,23,0.06);">
+          <h3 style="margin-bottom:8px;">Why choose A.S. Construction?</h3>
+          <ul style="color:#475569; list-style:none; padding-left:10px; line-height:1.6;">
+            <li>• Trusted structural engineering & certified workers</li>
+            <li>• Transparent pricing & timeline</li>
+            <li>• Free home planning & 3D layout consultations</li>
+            <li>• Warranty on major structural work</li>
+          </ul>
+          <div style="margin-top:12px;"><strong>Phone:</strong> +917750881749/7327842711</div>
+          <div style="margin-top:6px;"><strong>Email:</strong> santarakarunakr@gmail.com</div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- SERVICES -->
+    <section id="services" class="services" aria-label="Our services" style="margin-top:18px;">
+      <div class="card">
+        <h3>Complete Home Construction</h3>
+        <p>Turnkey construction from excavation and foundation through to finishing and handover.</p>
+      </div>
+      <div class="card">
+        <h3>Foundation & Structural Work</h3>
+        <p>Site surveys, strong foundations, reinforced concrete and structural safety checks.</p>
+      </div>
+      <div class="card">
+        <h3>Roofing & Exterior</h3>
+        <p>Durable roofing systems, waterproofing, and attractive exterior finishes.</p>
+      </div>
+      <div class="card">
+        <h3>Electrical & Plumbing</h3>
+        <p>Certified electrical wiring, safe plumbing installations, and compliance with codes.</p>
+      </div>
+      <div class="card">
+        <h3>Interior Design</h3>
+        <p>Custom interiors, modular kitchens, wardrobes and finishing that match your style.</p>
+      </div>
+      <div class="card">
+        <h3>Free Home Planning</h3>
+        <p>Get free initial structural and layout planning with our engineers for every new enquiry.</p>
+      </div>
+    </section>
+
+    <!-- FEATURES / PORTFOLIO -->
+    <section id="portfolio" class="features" aria-label="Portfolio & features">
+      <div class="feature-img">Portfolio / Project Photos (replace with images)</div>
+      <div class="feature-list">
+        <div class="feature-item"><div class="fi-dot"></div><div><strong>Residential Villas</strong><div class="muted">High-end finishes, landscaping & interiors</div></div></div>
+        <div class="feature-item"><div class="fi-dot"></div><div><strong>Multi-storey Buildings</strong><div class="muted">Strong structural design, optimized schedules</div></div></div>
+        <div class="feature-item"><div class="fi-dot"></div><div><strong>Renovation & Retrofit</strong><div class="muted">Efficient upgrades with minimal downtime</div></div></div>
+        <div class="feature-item"><div class="fi-dot"></div><div><strong>Commercial Projects</strong><div class="muted">Shop-fit, office layouts and MEP coordination</div></div></div>
+      </div>
+    </section>
+
+    <!-- CONTACT -->
+    <section id="contact" class="contact" aria-label="Contact">
+      <form onsubmit="event.preventDefault(); alert('Thanks! We received your request. Our team will contact you.');" aria-label="Contact form">
+        <label for="name">Full name</label>
+        <input id="name" name="name" type="text" placeholder="Your name" required>
+
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" type="tel" placeholder="+91 9xxxxxxxxx" required>
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" placeholder="you@example.com">
+
+        <label for="message">Project details / message</label>
+        <textarea id="message" name="message" placeholder="Brief details, location, budget, timeline..."></textarea>
+
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button class="btn" type="submit">Send Request</button>
+          <button class="btn alt" type="button" onclick="window.location='#portfolio'">View Portfolio</button>
+        </div>
+      </form>
+
+      <aside class="contact-info" aria-hidden="false">
+        <h4>Get a free consultation</h4>
+        <p class="muted">Call or Whatsapp</p>
+        <p style="font-weight:700; font-size:18px; margin:8px 0;">+91 98765 43210</p>
+        <p class="muted">Email</p>
+        <p style="font-weight:600;">info@asconstruction.example</p>
+        <div style="margin-top:12px; font-size:13px; opacity:0.95;">Office hours: Mon–Sat, 9:00 — 18:00</div>
+      </aside>
+    </section>
+
+    <footer>
+      © <span id="year"></span> A.S. Construction — All rights reserved • Made with care
+    </footer>
+  </div>
+
+  <script>
+    // small niceties
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
+"""
+
+def write_file(dest: Path):
+    dest.write_text(HTML, encoding="utf-8")
+    print(f"Wrote {dest.resolve()}")
+
+def run_server(directory: Path, port: int = 8000):
+    # Serve the provided directory using Python's built-in server
+    handler = http.server.SimpleHTTPRequestHandler
+    # change working directory for the server to the target dir
+    current_dir = Path.cwd()
+    try:
+        import os
+        os.chdir(directory)
+        with socketserver.TCPServer(("", port), handler) as httpd:
+            url = f"http://localhost:{port}/index.html"
+            print(f"Serving at {url} (press Ctrl+C to stop)")
+            # open browser in a separate thread so server runs
+            threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+            httpd.serve_forever()
+    finally:
+        os.chdir(current_dir)
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate A.S. Construction webpage and optionally run a local server.")
+    parser.add_argument("--out-dir", "-o", default="site", help="Output directory to write files into (default: ./site)")
+    parser.add_argument("--no-server", action="store_true", help="Write files but do not start local server")
+    parser.add_argument("--port", "-p", type=int, default=8000, help="Port for the preview server (default 8000)")
+    args = parser.parse_args()
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index_path = out_dir / "index.html"
+
+    write_file(index_path)
+
+    if args.no_server:
+        print("Done. To preview, open the generated file in a browser or run without --no-server to start a local server.")
+        print(f"File location: {index_path.resolve()}")
+        return
+
+    try:
+        run_server(out_dir, port=args.port)
+    except KeyboardInterrupt:
+        print("\nServer stopped by user. Goodbye.")
+
+if __name__ == "__main__":
+    main()
